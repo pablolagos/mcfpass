@@ -240,7 +240,7 @@ func verifyCryptFamily(password, mcf string) (bool, error) {
 		return false, ErrUnknownMCF
 	}
 	// Crypter.Verify compares "mcf" with the password; returns nil if match.
-	if err := c.Verify([]byte(mcf), []byte(password)); err != nil {
+	if err := c.Verify(mcf, []byte(password)); err != nil {
 		// crypt.ErrKeyMismatch indicates a valid check but wrong password.
 		if errors.Is(err, crypt.ErrKeyMismatch) {
 			return false, nil
