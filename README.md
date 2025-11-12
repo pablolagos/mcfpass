@@ -231,14 +231,6 @@ Different hashing algorithms produce strings of different lengths, but the **Mod
 
 > `VARCHAR(255)` safely covers all modern algorithms including Argon2id and future variants with longer parameter strings.
 
-Example definition:
-
-```sql
-password_hash VARCHAR(255) NOT NULL,
-password_algo VARCHAR(32) DEFAULT NULL,
-password_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-```
-
 ---
 
 ## Security Considerations
