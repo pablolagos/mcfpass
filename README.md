@@ -182,7 +182,7 @@ For **imported users from cPanel or UNIX**:
 
 ---
 
-## Integration Example (CorePanel / FTP Auth)
+## Integration Example 
 
 Example verifying imported users:
 
@@ -203,6 +203,41 @@ func authenticateUser(username, password string) bool {
 ```
 
 This design allows a seamless migration from legacy hashes while keeping modern accounts secure.
+
+---
+
+## Database Field Size Recommendations
+
+When designing your user or authentication tables, it’s important to allocate the right amount of space for password hashes and related metadata.  
+Different hashing algorithms produce strings of different lengths, but the **Modular Crypt Format (MCF)** used by `mcfpass` makes it easy to predict safe limits.
+
+### Typical MCF Lengths
+
+| Algorithm | Example Prefix | Typical Length (chars) | Notes |
+|------------|----------------|------------------------|-------|
+| `$2y$` / `$2b$` | bcrypt | ~60 | Always fixed-length |
+| `$argon2id$` | Argon2id | 95–120 | Depends on memory/time parameters |
+| `$6$` | SHA512-crypt | 90–106 | Common in cPanel and Linux `/etc/shadow` |
+| `$5$` | SHA256-crypt | 70–86 | Slightly shorter than SHA512 |
+| `$1$` | MD5-crypt | ~34 | Obsolete, legacy-only |
+
+### Recommended Schema
+
+| Database | Field Type | Recommended Size | Reason |
+|-----------|-------------|------------------|--------|
+| **SQLite** | `TEXT` | — | TEXT handles any reasonable MCF hash |
+| **MySQL / MariaDB** | `VARCHAR(255)` | 255 | Future-proof for all MCF variants |
+| **PostgreSQL** | `VARCHAR(255)` or `TEXT` | 255 | TEXT is fine; VARCHAR(255) for consistency |
+
+> `VARCHAR(255)` safely covers all modern algorithms including Argon2id and future variants with longer parameter strings.
+
+Example definition:
+
+```sql
+password_hash VARCHAR(255) NOT NULL,
+password_algo VARCHAR(32) DEFAULT NULL,
+password_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+```
 
 ---
 
