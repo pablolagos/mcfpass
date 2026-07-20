@@ -13,6 +13,7 @@ import (
 	"github.com/GehirnInc/crypt/md5_crypt"
 	"github.com/GehirnInc/crypt/sha256_crypt"
 	"github.com/GehirnInc/crypt/sha512_crypt"
+	yescrypt "github.com/openwall/yescrypt-go"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -66,10 +67,27 @@ func Verify(password, mcf string) (bool, error) {
 	case "6", "5", "1":
 		return verifyCryptFamily(password, mcf)
 	case "y":
-		// yescrypt needs libxcrypt/cgo or a dedicated pure-Go impl (not provided here).
-		return false, ErrUnsupportedMCF
+		return verifyYescrypt(password, mcf)
 	default:
 		return false, ErrUnknownMCF
+	}
+}
+
+// SupportedMCF reports whether Verify can check a plaintext password against the
+// given stored MCF hash without a rehash or reset. It inspects only the algorithm
+// id, never the password, so callers (e.g. migration/import tooling) can classify
+// credential compatibility up front. It does not validate the full structure of
+// the hash; a true result means "this scheme is understood", not "this exact
+// string is well-formed".
+func SupportedMCF(mcf string) bool {
+	if len(mcf) < 4 || mcf[0] != '$' {
+		return false
+	}
+	switch nextField(mcf[1:]) {
+	case "2y", "2a", "2b", "argon2id", "argon2i", "6", "5", "1", "y":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -248,6 +266,31 @@ func verifyCryptFamily(password, mcf string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// ---------- yescrypt ----------
+
+// verifyYescrypt implements $y$ (yescrypt) verification using the pure-Go
+// "openwall/yescrypt-go" library. A yescrypt MCF has the shape
+// "$y$<params>$<salt>$<hash>". We recompute the hash by passing the stored MCF
+// back as the "setting" (yescrypt-go reads only the params+salt portion) and
+// constant-time compare the full result against the stored value.
+func verifyYescrypt(password, mcf string) (bool, error) {
+	// Expect 5 parts: ["", "y", "<params>", "<salt>", "<hash>"].
+	parts := strings.Split(mcf, "$")
+	if len(parts) != 5 || parts[2] == "" || parts[3] == "" || parts[4] == "" {
+		return false, ErrInvalidMCF
+	}
+	recomputed, err := yescrypt.Hash([]byte(password), []byte(mcf))
+	if err != nil {
+		// A decoding/parameter error means the stored hash is not a valid
+		// yescrypt MCF, not a wrong password.
+		return false, ErrInvalidMCF
+	}
+	if subtle.ConstantTimeCompare(recomputed, []byte(mcf)) == 1 {
+		return true, nil
+	}
+	return false, nil
 }
 
 // ---------- helpers ----------

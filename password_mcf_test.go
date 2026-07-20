@@ -169,6 +169,75 @@ func TestVerifyCryptFamily(t *testing.T) {
 	}
 }
 
+func TestSupportedMCF(t *testing.T) {
+	supported := []string{
+		"$2y$12$abcdefghijklmnopqrstuv",
+		"$2a$10$abcdefghijklmnopqrstuv",
+		"$argon2id$v=19$m=65536,t=2,p=1$salt$hash",
+		"$argon2i$v=19$m=65536,t=2,p=1$salt$hash",
+		"$6$salt$hash",
+		"$5$salt$hash",
+		"$1$salt$hash",
+		"$y$j9T$e8R9q85ZuzUkArEUurdtS.$esON.7y6H.u3UCPVCpbRFueRpAut2n2cMf1EhpjbuiC",
+	}
+	for _, h := range supported {
+		if !SupportedMCF(h) {
+			t.Errorf("SupportedMCF(%q) = false, want true", h)
+		}
+	}
+	unsupported := []string{
+		"",
+		"invalid",
+		"$",
+		"$md5$x",
+		"plaintextpassword",
+		"$2$x", // truncated / unknown
+	}
+	for _, h := range unsupported {
+		if SupportedMCF(h) {
+			t.Errorf("SupportedMCF(%q) = true, want false", h)
+		}
+	}
+}
+
+func TestVerifyYescrypt(t *testing.T) {
+	// Known-good yescrypt vectors (from openwall/yescrypt-go's own examples).
+	tests := []struct {
+		password string
+		hash     string
+		expected bool
+	}{
+		{"openwall", "$y$j9T$AAt9R641xPvCI9nXw1HHW/$cuQRBMN3N/f8IcmVN.4YrZ1bHMOiLOoz9/XQMKV/v0A", true},
+		{"pleaseletmein", "$y$j9T$e8R9q85ZuzUkArEUurdtS.$esON.7y6H.u3UCPVCpbRFueRpAut2n2cMf1EhpjbuiC", true},
+		// Correct hash, wrong password.
+		{"wrongpassword", "$y$j9T$AAt9R641xPvCI9nXw1HHW/$cuQRBMN3N/f8IcmVN.4YrZ1bHMOiLOoz9/XQMKV/v0A", false},
+	}
+
+	for i, test := range tests {
+		valid, err := Verify(test.password, test.hash)
+		if err != nil {
+			t.Fatalf("Test %d: Verify failed: %v", i, err)
+		}
+		if valid != test.expected {
+			t.Errorf("Test %d: expected %v, got %v (pw=%q)", i, test.expected, valid, test.password)
+		}
+	}
+}
+
+func TestVerifyYescryptMalformed(t *testing.T) {
+	// Structurally invalid yescrypt strings must return an error, not a silent false.
+	malformed := []string{
+		"$y$salt$hash",   // only 4 fields (missing hash field)
+		"$y$j9T$onlysalt", // missing final hash field
+		"$y$j9T$$hash",    // empty salt field
+	}
+	for i, h := range malformed {
+		if _, err := Verify("password", h); err == nil {
+			t.Errorf("Test %d: expected error for malformed yescrypt %q", i, h)
+		}
+	}
+}
+
 func TestVerifyInvalidMCF(t *testing.T) {
 	tests := []string{
 		"",             // Empty
